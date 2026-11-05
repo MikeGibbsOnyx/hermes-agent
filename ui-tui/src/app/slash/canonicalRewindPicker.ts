@@ -8,7 +8,7 @@ import { introMsg, toTranscriptMessages } from '../../domain/messages.js'
 import { t } from '../../i18n/runtime.js'
 import { asRpcResult, rpcErrorMessage } from '../../lib/rpc.js'
 import type { SessionInfo } from '../../types.js'
-import { armPendingRewind, cancelBacktrackPrime, type RewindSubmission } from '../backtrackStore.js'
+import { armPendingRewind, cancelBacktrackPrime, cancelPendingRewind, type RewindSubmission } from '../backtrackStore.js'
 import type { RewindTarget } from '../interfaces.js'
 import { patchOverlayState } from '../overlayStore.js'
 import { captureDestination, type SubmissionDestination } from '../submissionDestination.js'
@@ -50,6 +50,8 @@ export function openRewindPicker(ctx: SlashRunCtx) {
   const sid = ctx.sid
 
   cancelBacktrackPrime()
+  // Browsing again starts over: an earlier armed edit no longer applies.
+  cancelPendingRewind()
 
   if (!sid) {
     return ctx.transcript.sys(t('slashCmd.core.rewind.nothing'))
