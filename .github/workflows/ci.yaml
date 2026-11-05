@@ -363,7 +363,7 @@ jobs:
       commit: ${{ inputs.commit }}
 
   lockfile-diff:
-    name: package-lock.json diff
+    name: JS lockfile diff
     needs: detect
     if: needs.detect.outputs.event_name == 'pull_request' && needs.detect.outputs.npm_lock == 'true'
     uses: ./.github/workflows/lockfile-diff.yml
