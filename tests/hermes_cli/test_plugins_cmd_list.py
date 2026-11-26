@@ -183,3 +183,45 @@ def test_unreadable_plugin_dir_is_skipped_by_every_manifest_scan(monkeypatch, tm
     assert loader_names == ["good"]
     assert listed_names == ["good"]
     assert caplog.text.count("Skipping unreadable plugin directory") == 2
+
+
+@pytest.mark.skipif(plugins_cmd._resolve_git_executable() is None, reason="needs git")
+def test_list_json_reports_catalog_drift_for_user_installs(monkeypatch, tmp_path, capsys):
+    """A ``source: user`` install whose name matches a bundled catalog entry gets an additive
+    ``update_available``: git HEAD vs the pinned sha, else plugin.yaml version vs catalog version."""
+    import subprocess
+
+    user_dir, bundled_dir, catalog_dir = tmp_path / "plugins", tmp_path / "bundled", tmp_path / "catalog"
+    bundled_dir.mkdir()
+    catalog_dir.mkdir()
+    for name, version in (("copy-same", "0.1.3"), ("copy-old", "0.1.0"), ("git-pinned", "1.0.0"),
+                          ("git-off-pin", "1.0.0"), ("not-in-catalog", "1.0.0")):
+        (user_dir / name).mkdir(parents=True)
+        (user_dir / name / "plugin.yaml").write_text(f"name: {name}\nversion: {version}\n", encoding="utf-8")
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+    heads = {}
+    for name in ("git-pinned", "git-off-pin"):
+        repo = user_dir / name
+        subprocess.run([*git, "init", "-q"], cwd=repo, check=True)
+        subprocess.run([*git, "add", "-A"], cwd=repo, check=True)
+        subprocess.run([*git, "commit", "-qm", "c"], cwd=repo, check=True)
+        heads[name] = subprocess.run([*git, "rev-parse", "HEAD"], cwd=repo, check=True,
+                                     capture_output=True, text=True).stdout.strip()
+    pins = {"copy-same": "e" * 40, "copy-old": "e" * 40, "git-pinned": heads["git-pinned"], "git-off-pin": "a" * 40}
+    for name, sha in pins.items():  # every catalog entry says version 0.1.3 (a git HEAD match outranks it)
+        (catalog_dir / f"{name}.yaml").write_text(
+            f"name: {name}\nrepo: https://github.com/example/{name}\nsha: {sha}\ndescription: d\n"
+            f"maintainer: t\ncategory: tools\nversion: \"0.1.3\"\n", encoding="utf-8")
+    monkeypatch.setattr(plugins_cmd, "_plugins_dir", lambda: user_dir)
+    monkeypatch.setattr("hermes_cli.plugins.get_bundled_plugins_dir", lambda: bundled_dir)
+    monkeypatch.setattr("hermes_cli.plugin_catalog.get_catalog_dir", lambda: catalog_dir)
+    monkeypatch.setattr("hermes_cli.plugins_cmd_catalog.resolved_removed_entries", list)  # no network
+    monkeypatch.setattr(importlib.metadata, "entry_points", list)
+
+    plugins_cmd.cmd_list(_args(json=True))
+    rows = {row["name"]: row for row in json.loads(capsys.readouterr().out)}
+
+    assert {n: rows[n].get("update_available") for n in rows} == {
+        "copy-same": False, "copy-old": True, "git-pinned": False, "git-off-pin": True, "not-in-catalog": None}
+    assert rows["git-pinned"]["source"] == "git" and rows["copy-same"]["source"] == "user"
+    assert set(rows["not-in-catalog"]) == {"name", "status", "version", "description", "source", "removed"}

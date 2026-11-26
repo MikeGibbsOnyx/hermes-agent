@@ -37,6 +37,24 @@ def _entry_status(entry: tuple, enabled: set, disabled: set, active: set) -> str
 _STATUS_MARKUP = {"disabled": "[red]disabled[/red]", "enabled": "[green]enabled[/green]"}
 
 
+def _user_install_drift(source: str, dir_path, version: str, entry) -> bool | None:
+    """``update_available`` for a non-catalog install whose name matches an in-tree catalog *entry*:
+    a git checkout's HEAD vs the pinned sha, else plugin.yaml ``version`` vs the entry's ``version``.
+    ``None`` = not comparable (no entry, catalog sidecar install, or nothing to compare). No network."""
+    from hermes_cli import plugins_cmd_catalog as catalog
+    if entry is None or source not in ("user", "git") or not dir_path or catalog.catalog_install_record(dir_path):
+        return None
+    git_exe = _pc()._resolve_git_executable() if source == "git" else None
+    if git_exe:
+        head = _pc()._run_plugin_git(git_exe, Path(dir_path), "rev-parse", "HEAD", timeout=5)
+        sha = head.stdout.strip().lower() if head.returncode == 0 else ""
+        if len(sha) == 40:
+            return sha != entry.sha.lower()
+    if version and entry.version:
+        return str(version).strip() != str(entry.version).strip()
+    return None
+
+
 def cmd_list(args: Any | None = None) -> None:
     """List all plugins (bundled + user) with enabled/disabled state."""
     console = _pc()._console()
@@ -67,7 +85,13 @@ def cmd_list(args: Any | None = None) -> None:
 
     if getattr(args, "json", False):
         keys = ("name", "status", "version", "description", "source", "removed")
-        print(json.dumps([dict(zip(keys, row)) for row in rows], indent=2))
+        from hermes_cli.plugin_catalog import load_catalog  # bundled plugin-catalog/*.yaml only
+        by_name = {e.name: e for e in load_catalog()}
+        out: list[dict[str, Any]] = [dict(zip(keys, row)) for row in rows]
+        for item, (name, version, _desc, source, _dir, _key) in zip(out, entries):
+            if (drift := _user_install_drift(source, _dir, version, by_name.get(name))) is not None:
+                item["update_available"] = drift
+        print(json.dumps(out, indent=2))
         return
 
     if getattr(args, "plain", False):
