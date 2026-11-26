@@ -1,0 +1,17 @@
+name: catalog-watch
+repo: https://github.com/MikeGibbsOnyx/hermes-market-watch
+sha: af93d5f53813c3b81a97e6d0de7d03e94ba3db66
+description: "Weekly digest of added, updated and removed Hermes plugin-catalog entries in chosen categories, written to a local markdown file. Disclosure — the only network access is a read-only, depth-1, blob-filtered sparse git clone of the public https://github.com/NousResearch/hermes-agent (plugin-catalog/ only) into a temp dir that is deleted after the run, with no credentials and global/system git config ignored; stores a name/version/category/sha snapshot in plugin-data/catalog-watch/data.db; writes the digest to plugin-data/catalog-watch/digest.md unless output_path is set; clone budget 60 s per git step; no telemetry."
+maintainer: MikeGibbsOnyx
+tier: community
+category: tools
+requires_hermes: ">=0.21.6"
+docs_url: https://github.com/MikeGibbsOnyx/hermes-market-watch
+version: "0.1.0"
+platforms: []
+capabilities:
+  provides_tools:
+  - catalog_watch
+  provides_hooks: []
+  provides_middleware: []
+  requires_env: []
